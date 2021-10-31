@@ -867,6 +867,25 @@ class ConvertHALEntryPointFuncOp : public ConvertToLLVMPattern {
     for (auto returnOp : llvm::make_early_inc_range(
              llvmFuncOp.getOps<mlir::func::ReturnOp>())) {
       rewriter.setInsertionPoint(returnOp);
+
+      // DO NOT SUBMIT
+      // Call a function to compute a number and then call another to print it
+      // to stdout. We do this here because we know each dispatch function will
+      // have one of these. Real code would emit these before conversion to LLVM
+      // or during as part of a lowering.
+      Value a =
+          rewriter.create<arith::ConstantIntOp>(returnOp.getLoc(), 100, 32);
+      Value b =
+          rewriter.create<arith::ConstantIntOp>(returnOp.getLoc(), 200, 32);
+      auto call = rewriter.create<mlir::func::CallOp>(
+          returnOp.getLoc(), "iree_test_func",
+          TypeRange{rewriter.getI32Type(), rewriter.getI32Type()},
+          ValueRange{a, b});
+      Value c = rewriter.create<arith::AddIOp>(
+          returnOp.getLoc(), call.getResult(0), call.getResult(1));
+      rewriter.create<mlir::func::CallOp>(returnOp.getLoc(), "iree_test_printi",
+                                          TypeRange{}, ValueRange{c});
+
       auto returnValue = rewriter.createOrFold<mlir::arith::ConstantIntOp>(
           returnOp.getLoc(), 0, 32);
       rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(returnOp, returnValue);
