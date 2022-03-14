@@ -8,6 +8,7 @@
 
 #include <cstdlib>
 
+#include "iree-dialects/Dialect/LinalgTransform/LinalgTransformOps.h"
 #include "iree/compiler/Codegen/Dialect/IREECodegenDialect.h"
 #include "iree/compiler/Codegen/Passes.h"
 #include "iree/compiler/Dialect/HAL/Target/LLVM/Builtins/Device.h"
@@ -27,6 +28,8 @@
 #include "llvm/Support/TargetSelect.h"
 #include "mlir/Dialect/ArmNeon/ArmNeonDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/PDL/IR/PDL.h"
+#include "mlir/Dialect/PDLInterp/IR/PDLInterp.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 
@@ -146,8 +149,13 @@ class LLVMAOTTargetBackend final : public TargetBackend {
   void getDependentDialects(DialectRegistry &registry) const override {
     mlir::registerLLVMDialectTranslation(registry);
     // TODO: make inclusion of ArmNeon conditional?
-    registry
-        .insert<IREE::Codegen::IREECodegenDialect, arm_neon::ArmNeonDialect>();
+    // clang-format off
+    registry.insert<IREE::Codegen::IREECodegenDialect,
+                    linalg::transform::LinalgTransformDialect,
+                    pdl::PDLDialect,
+                    pdl_interp::PDLInterpDialect,
+                    arm_neon::ArmNeonDialect>();
+    // clang-format on
   }
 
   IREE::HAL::DeviceTargetAttr getDefaultDeviceTarget(

@@ -29,6 +29,7 @@ iree_cc_library(
     ::LinkerTool
     ::StaticLibraryGenerator
     IREELLVMCPUTargetDeps
+    IREELinalgTransformDialect
     LLVMAnalysis
     LLVMBitReader
     LLVMBitWriter
@@ -38,6 +39,8 @@ iree_cc_library(
     MLIRArmNeon
     MLIRLLVMIR
     MLIRLLVMToLLVMIRTranslation
+    MLIRPDL
+    MLIRPDLInterp
     MLIRTargetLLVMIRExport
     iree::compiler::Codegen::Common
     iree::compiler::Codegen::Dialect::IREECodegenDialect
