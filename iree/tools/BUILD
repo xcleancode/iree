@@ -114,7 +114,6 @@ cc_library(
         "//iree/compiler/Dialect/Vulkan/IR",
         "//iree/compiler/InputConversion/Common",
         "//iree/compiler/InputConversion/MHLO",
-        "//iree/compiler/InputConversion/TMTensor",
         "//iree/compiler/InputConversion/TOSA",
         "//iree/compiler/Translation:HALExecutable",
         "//iree/compiler/Translation:IREEVM",
@@ -181,7 +180,6 @@ cc_library(
         ":init_compiler_modules",
         ":init_iree_passes_and_dialects",
         ":init_mlir_passes_and_dialects",
-        ":init_torch_mlir_dialects",
         ":init_xla_dialects",
         "//iree/compiler/Codegen",
         "//iree/compiler/Dialect/HAL/Conversion:Passes",
@@ -239,16 +237,6 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@mlir-hlo//:hlo",
         "@mlir-hlo//:lhlo",
-    ],
-)
-
-cc_library(
-    name = "init_torch_mlir_dialects",
-    hdrs = [
-        "init_torch_mlir_dialects.h",
-    ],
-    deps = [
-        "@torch-mlir-dialects//:TorchMLIRTMTensorDialect",
     ],
 )
 

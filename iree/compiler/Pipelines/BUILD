@@ -42,7 +42,6 @@ cc_library(
         "//iree/compiler/Dialect/VM/Transforms",
         "//iree/compiler/InputConversion/Common",
         "//iree/compiler/InputConversion/MHLO",
-        "//iree/compiler/InputConversion/TMTensor",
         "//iree/compiler/InputConversion/TOSA",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
