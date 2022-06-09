@@ -71,6 +71,14 @@ struct CombineTransferReadOpBroadcast final
   }
 };
 
+static Optional<SmallVector<int64_t>> unrollOrder(Operation *op) {
+  auto contraction = dyn_cast<vector::ContractionOp>(op);
+  if(!contraction)
+    return llvm::None;
+  SmallVector<int64_t> d = { 2, 0, 1 };
+  return d;
+}
+
 static Optional<SmallVector<int64_t, 4>> getGPUTCNativeVectorSize(
     Operation *op) {
   // Currently hardcode the size of wmma operation. When more cases are
@@ -120,8 +128,9 @@ static Optional<SmallVector<int64_t, 4>> getGPUTCNativeVectorSize(
 
 static void populateVectorUnrollPatterns(RewritePatternSet &patterns) {
   vector::populateVectorUnrollPatterns(
-      patterns,
-      vector::UnrollVectorOptions().setNativeShapeFn(getGPUTCNativeVectorSize));
+      patterns, vector::UnrollVectorOptions()
+                    .setNativeShapeFn(getGPUTCNativeVectorSize)
+                    .setUnrollTraversalOrderFn(unrollOrder));
 }
 
 namespace {

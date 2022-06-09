@@ -20,6 +20,8 @@
 #include "mlir/Pass/PassOptions.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Transforms/Passes.h"
+#include "mlir/Dialect/NVGPU/Passes.h"
+
 
 namespace mlir {
 namespace iree_compiler {
@@ -155,8 +157,8 @@ void addGPUMatmulTensorCorePassPipeline(OpPassManager &pm,
   nestedModulePM.addPass(createCanonicalizerPass());
   nestedModulePM.addPass(createCSEPass());
 
-  nestedModulePM.addNestedPass<func::FuncOp>(
-      createLLVMGPUReduceSharedMemoryBankConflicts());
+//  nestedModulePM.addNestedPass<func::FuncOp>(
+//      createLLVMGPUReduceSharedMemoryBankConflicts());
   nestedModulePM.addNestedPass<func::FuncOp>(
       createRemoveSingleIterationLoopPass());
   nestedModulePM.addNestedPass<func::FuncOp>(
@@ -178,6 +180,7 @@ void addGPUMatmulTensorCorePassPipeline(OpPassManager &pm,
   nestedModulePM.addNestedPass<func::FuncOp>(createLLVMGPUVectorToGPU());
   nestedModulePM.addPass(createCanonicalizerPass());
   nestedModulePM.addPass(createCSEPass());
+  nestedModulePM.addPass(nvgpu::createOptimizeSharedMemoryPass());
 
   // Pipeline memory operations.
   nestedModulePM.addNestedPass<func::FuncOp>(
