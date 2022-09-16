@@ -47,3 +47,7 @@
 [submodule "third_party/musl"]
 	path = third_party/musl
 	url = https://github.com/powderluv/musl.git
+[submodule "third_party/tpp"]
+	path = third_party/tpp
+	url = https://github.com/plaidml/tpp-sandbox.git
+	branch = track-iree

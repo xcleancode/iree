@@ -23,6 +23,13 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Transforms/Passes.h"
 
+// TODO: TPP_INTEGRATION
+// Should be tpp/ but OTOH we graduate by either upstreaming ops or
+// passing through LinalgExt, so this is really a temporary crutch that
+// won't land in IREE.
+#include "Standalone/Dialect/LinalgX/LinalgXDialect.h"
+#include "Standalone/Dialect/Tpp/TppDialect.h"
+#include "Standalone/Dialect/Xsmm/XsmmDialect.h"
 namespace mlir {
 namespace iree_compiler {
 
@@ -47,13 +54,16 @@ class LLVMCPULowerExecutableTargetPass
                     bufferization::BufferizationDialect,
                     linalg::LinalgDialect,
                     linalg::transform::LinalgTransformDialect,
+                    linalgx::LinalgXDialect,
                     LLVM::LLVMDialect,
                     pdl::PDLDialect,
                     pdl_interp::PDLInterpDialect,
                     scf::SCFDialect,
                     tensor::TensorDialect,
+                    tpp::TppDialect,
                     transform::TransformDialect,
-                    vector::VectorDialect>();
+                    vector::VectorDialect,
+                    xsmm::XsmmDialect>();
     // clang-format on
   }
 

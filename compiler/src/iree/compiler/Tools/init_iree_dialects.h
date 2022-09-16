@@ -31,6 +31,14 @@
 #include "iree/compiler/Modules/HAL/Loader/IR/HALLoaderDialect.h"
 #include "mlir/IR/Dialect.h"
 
+// TODO: TPP_INTEGRATION
+// Should be tpp/ but OTOH we graduate by either upstreaming ops or
+// passing through LinalgExt, so this is really a temporary crutch that
+// won't land in IREE.
+#include "Standalone/Dialect/LinalgX/LinalgXDialect.h"
+#include "Standalone/Dialect/Tpp/TppDialect.h"
+#include "Standalone/Dialect/Xsmm/XsmmDialect.h"
+
 namespace mlir {
 namespace iree_compiler {
 
@@ -44,6 +52,9 @@ inline void registerIreeDialects(DialectRegistry &registry) {
                   IREE::HAL::Loader::HALLoaderDialect,
                   IREE::LinalgExt::IREELinalgExtDialect,
                   mlir::linalg::transform::LinalgTransformDialect,
+                  mlir::linalgx::LinalgXDialect,
+                  mlir::tpp::TppDialect,
+                  mlir::xsmm::XsmmDialect,
                   IREE::Stream::StreamDialect,
                   IREE::Util::UtilDialect,
                   IREE::VM::VMDialect,

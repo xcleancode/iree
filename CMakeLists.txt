@@ -594,6 +594,10 @@ else()
   if(IREE_INPUT_TORCH)
     iree_add_llvm_external_project(torch-mlir-dialects TORCH_MLIR_DIALECTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/torch-mlir-dialects)
   endif()
+  if(IREE_USE_TPP)
+    set(TPP_INSIDE_IREE ON CACHE BOOL "" FORCE)
+    iree_add_llvm_external_project(mlir-tpp-dialects MLIR_TPP_DIALECTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tpp)
+  endif()
 
   add_subdirectory("third_party/llvm-project/llvm" EXCLUDE_FROM_ALL)
 

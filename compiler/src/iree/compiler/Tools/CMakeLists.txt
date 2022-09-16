@@ -56,6 +56,12 @@ if(IREE_INPUT_TOSA)
   list(APPEND IREE_INPUT_DEPS MLIRTosaTransforms)
 endif()
 
+# Set TPP dependence.
+if(IREE_USE_TPP)
+  set(MAYBE_TPP_LIB TPPStandalone)
+endif()
+
+
 iree_cc_library(
   NAME
     init_input_passes_and_dialects
@@ -84,6 +90,9 @@ iree_cc_library(
     IREELinalgExtTransforms
     IREELinalgTransformDialect
     IREELinalgTransformDialectPasses
+
+    ${MAYBE_TPP_LIB}
+
     MLIRIR
     iree::compiler::Bindings::Native::Transforms
     iree::compiler::Bindings::TFLite::Transforms

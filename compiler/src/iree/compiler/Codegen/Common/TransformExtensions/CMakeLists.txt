@@ -31,8 +31,11 @@ iree_cc_library(
     "CommonExtensionsOps.cpp.inc"
   DEPS
     ::CommonExtensionsOpGen
+
+    ${MAYBE_TPP_LIB}
     IREEDialectsTransforms
     IREELinalgTransformDialect
+
     LLVMSupport
     MLIRAffineDialect
     MLIRArithDialect

@@ -21,6 +21,13 @@ iree_cc_library(
     ::BufferizationInterfaces
     ::PartitionableLoopsInterface
     ::ProcessorOpInterfaces
+    
+    # TODO: TPP_INTEGRATION
+    # We shouldn't need all these but unfortunately build/includes fail without.
+    ${MAYBE_TPP_LIB}
+    TPPLinalgXDialect
+    TPPLinalgXTransformOps
+
     IREELinalgExtTransformOps
     IREELinalgTransformDialect
     MLIRLinalgTransformOps
@@ -40,6 +47,12 @@ iree_cc_library(
   SRCS
     "BufferizationInterfaces.cpp"
   DEPS
+    # TODO: TPP_INTEGRATION
+    # We shouldn't need all these but unfortunately build/includes fail without.
+    ${MAYBE_TPP_LIB}
+    TPPLinalgXDialect
+    TPPLinalgXTransformOps
+    
     IREELinalgExtDialect
     MLIRArithTransforms
     MLIRBufferizationDialect

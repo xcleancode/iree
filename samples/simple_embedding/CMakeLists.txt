@@ -8,6 +8,11 @@
 # To disable autogeneration for this file entirely, delete this header.        #
 ################################################################################
 
+# TODO: TPP_INTEGRATION
+# There is a conflict on IREE_HAL_EXECUTABLE_IMPORT_PROVIDER_DEFAULT_FN that we
+# hack out of the build explicitly here.
+if (NOT DEFINED IREE_USE_TPP)
+
 iree_add_all_subdirs()
 
 if(IREE_HAL_DRIVER_LOCAL_SYNC AND IREE_HAL_EXECUTABLE_LOADER_VMVX_MODULE AND
@@ -244,6 +249,8 @@ iree_native_test(
   SRC
     ::simple_embedding_vulkan
 )
+
+endif()
 
 endif()
 
