@@ -123,7 +123,10 @@ DiagnosedSilenceableFailure transform_dialect::ApplyPatternsOp::applyToOne(
   if (getAdditionalIreePatterns()) addAdditionalIreePatterns(patterns);
 
   // TPP patterns.
-  if (getLinalgToTpp()) tpp::populateLinalgToTppPatterns(patterns);
+  if (getLinalgToTpp()) {
+    tpp::populateMapLinalgToTppPatterns(patterns);
+    tpp::populateConvertLinalgToTppPatterns(patterns);
+  }
   if (getTppToXsmm()) tpp::populateTppToXsmmPatterns(patterns);
   if (getXsmmToFunc())
     tpp::populateXsmmToFuncPatterns(patterns, /*useExtractMetaData=*/true);
