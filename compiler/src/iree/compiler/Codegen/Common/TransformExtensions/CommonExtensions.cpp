@@ -112,6 +112,7 @@ DiagnosedSilenceableFailure transform_dialect::ApplyPatternsOp::applyToOne(
         "patterns greedily");
     return DiagnosedSilenceableFailure(reportUnknownTransformError(target));
   }
+
   MLIRContext *ctx = target->getContext();
   RewritePatternSet patterns(ctx);
   if (getCanonicalization()) addAllRegisteredCanonicalizationPatterns(patterns);
@@ -124,9 +125,11 @@ DiagnosedSilenceableFailure transform_dialect::ApplyPatternsOp::applyToOne(
 
   // TPP patterns.
   if (getLinalgToTpp()) {
-    tpp::populateMapLinalgToTppPatterns(patterns);
     tpp::populateConvertLinalgToTppPatterns(patterns);
+    tpp::populateMapLinalgToTppPatterns(patterns);
   }
+  if (getSwappingRelayoutPatterns())
+    tpp::populateSinkRelayoutPatterns(patterns);
   if (getTppToXsmm()) tpp::populateTppToXsmmPatterns(patterns);
   if (getXsmmToFunc())
     tpp::populateXsmmToFuncPatterns(patterns, /*useExtractMetaData=*/true);

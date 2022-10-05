@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
 
   if (failed(MlirOptMain(argc, argv, "IREE modular optimizer driver\n",
                          registry,
-                         /*preloadDialectsInContext=*/false))) {
+                         /*preloadDialectsInContext=*/true))) {
     return 1;
   }
   return 0;

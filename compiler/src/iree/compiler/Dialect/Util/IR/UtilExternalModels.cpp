@@ -6,12 +6,19 @@
 
 #include "iree/compiler/Dialect/Util/IR/UtilExternalModels.h"
 
+#include "Standalone/Dialect/LinalgX/LinalgXDialect.h"
 #include "iree-dialects/Dialect/LinalgExt/IR/LinalgExtDialect.h"
 #include "iree-dialects/Dialect/LinalgExt/IR/LinalgExtOps.h"
 #include "iree/compiler/Dialect/Util/IR/UtilTypes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+
+// TODO: TPP_INTEGRATION
+// Should be tpp/ but OTOH we graduate by either upstreaming ops or
+// passing through LinalgExt, so this is really a temporary crutch that
+// won't land in IREE.
+#include "Standalone/Dialect/LinalgX/LinalgXOps.h"
 
 namespace mlir {
 namespace iree_compiler {
@@ -40,6 +47,30 @@ struct GenericNumericCastExternalModel {
     add<OpTy2, More...>(ctx);
   }
 };
+
+// struct LinalgXRelayoutOpTiedOpInterface
+//     : public TiedOpInterface::ExternalModel<LinalgXRelayoutOpTiedOpInterface,
+//                                             linalgx::Relayout> {
+//   Value getTiedResult(Operation *op, unsigned resultIndex) const {
+//     auto relayoutOp = cast<linalgx::Relayout>(op);
+//     return IREE::Util::TiedOpInterface::findTiedBaseValue(
+//         relayoutOp.getOutputs()[resultIndex]);
+//   }
+
+//   ::llvm::Optional<unsigned> getTiedResultOperandIndex(
+//       Operation *op, unsigned resultIndex) const {
+//     auto relayoutOp = cast<linalgx::Relayout>(op);
+//     return {relayoutOp.getInputs().size() + resultIndex};  // dest
+//   }
+
+//   SmallVector<int64_t, 4> getTiedResultOperandIndices(Operation *op) const {
+//     auto relayoutOp = cast<linalgx::Relayout>(op);
+//     return llvm::to_vector<4>(
+//         llvm::seq<int64_t>(relayoutOp.getInputs().size(),
+//                            relayoutOp.getInputs().size() +
+//                                relayoutOp.getOutputs().size()));  // dest
+//   }
+// };
 
 struct InsertSliceOpTiedOpInterface
     : public TiedOpInterface::ExternalModel<InsertSliceOpTiedOpInterface,
@@ -113,11 +144,15 @@ void registerUtilExternalModels(DialectRegistry &registry) {
   registry.addExtension(+[](MLIRContext *ctx, tensor::TensorDialect *dialect) {
     tensor::InsertSliceOp::attachInterface<InsertSliceOpTiedOpInterface>(*ctx);
   });
-
+  // registry.addExtension(+[](MLIRContext *ctx,
+  //                           linalgx::LinalgXDialect *dialect) {
+  //   linalgx::Relayout::attachInterface<LinalgXRelayoutOpTiedOpInterface>(*ctx);
+  // });
   registry.addExtension(+[](MLIRContext *ctx, linalg::LinalgDialect *dialect) {
-    // Register all Linalg structured ops. `LinalgOp` is an interface and it is
-    // not possible to attach an external interface to an existing interface.
-    // Therefore, attach the `TiedOpInterface` to all ops one-by-one.
+    // Register all Linalg structured ops. `LinalgOp` is an interface
+    // and it is not possible to attach an external interface to an
+    // existing interface. Therefore, attach the `TiedOpInterface` to
+    // all ops one-by-one.
     LinalgOpTiedOpInterfaceHelper<
 #define GET_OP_LIST
 #include "mlir/Dialect/Linalg/IR/LinalgStructuredOps.cpp.inc"

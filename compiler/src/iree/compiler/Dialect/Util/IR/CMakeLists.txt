@@ -19,6 +19,13 @@ iree_cc_library(
     "UtilExternalModels.cpp"
   DEPS
     ::IR
+    
+    # TODO: TPP_INTEGRATION
+    # We shouldn't need all these but unfortunately build/includes fail without.
+    ${MAYBE_TPP_LIB}
+    TPPLinalgXDialect
+    TPPLinalgXTransformOps
+    
     IREELinalgExtDialect
     MLIRArithDialect
     MLIRLinalgDialect
@@ -61,6 +68,13 @@ iree_cc_library(
     ::UtilInterfacesGen
     ::UtilOpsGen
     ::UtilTypesGen
+
+    # TODO: TPP_INTEGRATION
+    # We shouldn't need all these but unfortunately build/includes fail without.
+    ${MAYBE_TPP_LIB}
+    TPPLinalgXDialect
+    TPPLinalgXTransformOps
+
     LLVMSupport
     MLIRArithDialect
     MLIRControlFlowDialect

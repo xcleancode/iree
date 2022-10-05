@@ -32,7 +32,12 @@ iree_cc_library(
   DEPS
     ::CommonExtensionsOpGen
 
+    # TODO: TPP_INTEGRATION
+    # We shouldn't need all these but unfortunately build/includes fail without.
     ${MAYBE_TPP_LIB}
+    TPPLinalgXDialect
+    TPPLinalgXTransformOps
+    
     IREEDialectsTransforms
     IREELinalgTransformDialect
 

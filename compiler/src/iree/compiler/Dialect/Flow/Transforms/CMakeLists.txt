@@ -69,6 +69,13 @@ iree_cc_library(
     IREELinalgExtTransformOps
     IREELinalgTransformDialect
     IREELinalgTransformDialectPasses
+
+    # TODO: TPP_INTEGRATION
+    # We shouldn't need all these but unfortunately build/includes fail without.
+    ${MAYBE_TPP_LIB}
+    TPPLinalgXDialect
+    TPPLinalgXTransformOps
+
     LLVMSupport
     MLIRAffineDialect
     MLIRAnalysis

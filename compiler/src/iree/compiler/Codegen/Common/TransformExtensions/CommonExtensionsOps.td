@@ -48,6 +48,8 @@ def ApplyPatternsOp : Op<Transform_Dialect, "iree.apply_patterns",
       yield incorrect code in pathological cases.
       # Experimental TPP patterns.
       - linalg_to_tpp: adds patterns that lower linalg ops to tpp.
+      - swapping_relayout_patterns: adds patterns that swap relayout operations
+      for a better outcome.
       - tpp_to_xsmm: adds patterns that lower tpp to xsmm.
       - xsmm_to_func: adds patterns that lower xsmm to func calls.
 
@@ -73,6 +75,7 @@ def ApplyPatternsOp : Op<Transform_Dialect, "iree.apply_patterns",
                        UnitAttr:$swapping_patterns,
                        // TPP patterns
                        UnitAttr:$linalg_to_tpp,
+                       UnitAttr:$swapping_relayout_patterns,
                        UnitAttr:$tpp_to_xsmm,
                        UnitAttr:$xsmm_to_func);
   let results = (outs PDL_Operation:$result);
