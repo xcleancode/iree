@@ -423,8 +423,7 @@ void ConvertToDestinationPassingStylePass::runOnOperation() {
 
   {
     RewritePatternSet patterns(context);
-    patterns.insert<AdaptLinalgInputOperandToOutputOperand,
-                    RemoveCstOutsDependency>(context);
+    patterns.insert<RemoveCstOutsDependency>(context);
     if (failed(applyPatternsAndFoldGreedily(funcOp, std::move(patterns)))) {
       return signalPassFailure();
     }

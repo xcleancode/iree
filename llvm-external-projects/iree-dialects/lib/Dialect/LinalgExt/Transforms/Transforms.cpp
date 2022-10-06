@@ -319,6 +319,13 @@ struct LinalgStrategyEnablePass
     if (!anchorFuncName.empty() && funcOp.getName() != anchorFuncName)
       return;
 
+    {
+      OpPassManager dynamicPM("func.func");
+      dynamicPM.addPass(createCSEPass());
+      if (failed(runPipeline(dynamicPM, funcOp)))
+        return signalPassFailure();
+    }
+
     MLIRContext *context = funcOp.getContext();
     RewritePatternSet patterns =
         linalg::getLinalgTilingCanonicalizationPatterns(context);
