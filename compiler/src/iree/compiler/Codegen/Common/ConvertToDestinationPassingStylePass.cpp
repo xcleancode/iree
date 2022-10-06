@@ -337,8 +337,8 @@ static bool canUseInOperandAsOutOperand(OpOperand *inOperand,
   auto linalgOp = dyn_cast<linalg::LinalgOp>(inOperand->getOwner());
   if (!linalgOp) return false;
 
-  if (linalgOp.getTiedIndexingMap(inOperand) !=
-      linalgOp.getTiedIndexingMap(outOperand)) {
+  if (linalgOp.getMatchingIndexingMap(inOperand) !=
+      linalgOp.getMatchingIndexingMap(outOperand)) {
     return false;
   }
 
