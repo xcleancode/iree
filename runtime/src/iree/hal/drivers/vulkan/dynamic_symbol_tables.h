@@ -135,7 +135,7 @@ namespace vulkan {
   DEV_PFN(REQUIRED, vkEndCommandBuffer)                                 \
   DEV_PFN(EXCLUDED, vkResetCommandBuffer)                               \
   DEV_PFN(EXCLUDED, vkAcquireNextImage2KHR)                             \
-  DEV_PFN(EXCLUDED, vkAcquireNextImageKHR)                              \
+  DEV_PFN(OPTIONAL, vkAcquireNextImageKHR)                              \
   DEV_PFN(REQUIRED, vkAllocateCommandBuffers)                           \
   DEV_PFN(REQUIRED, vkAllocateDescriptorSets)                           \
   DEV_PFN(REQUIRED, vkAllocateMemory)                                   \
@@ -176,7 +176,7 @@ namespace vulkan {
   DEV_PFN(REQUIRED, vkCreateSemaphore)                                  \
   DEV_PFN(REQUIRED, vkCreateShaderModule)                               \
   DEV_PFN(EXCLUDED, vkCreateSharedSwapchainsKHR)                        \
-  DEV_PFN(EXCLUDED, vkCreateSwapchainKHR)                               \
+  DEV_PFN(OPTIONAL, vkCreateSwapchainKHR)                               \
   DEV_PFN(EXCLUDED, vkCreateValidationCacheEXT)                         \
   DEV_PFN(EXCLUDED, vkDebugMarkerSetObjectNameEXT)                      \
   DEV_PFN(EXCLUDED, vkDebugMarkerSetObjectTagEXT)                       \
@@ -206,7 +206,7 @@ namespace vulkan {
   DEV_PFN(EXCLUDED, vkDestroySamplerYcbcrConversionKHR)                 \
   DEV_PFN(REQUIRED, vkDestroySemaphore)                                 \
   DEV_PFN(REQUIRED, vkDestroyShaderModule)                              \
-  DEV_PFN(EXCLUDED, vkDestroySwapchainKHR)                              \
+  DEV_PFN(OPTIONAL, vkDestroySwapchainKHR)                              \
   DEV_PFN(EXCLUDED, vkDestroyValidationCacheEXT)                        \
   DEV_PFN(REQUIRED, vkDeviceWaitIdle)                                   \
   DEV_PFN(EXCLUDED, vkDisplayPowerControlEXT)                           \
@@ -254,7 +254,7 @@ namespace vulkan {
   DEV_PFN(OPTIONAL, vkGetSemaphoreFdKHR)                                \
   DEV_PFN(EXCLUDED, vkGetShaderInfoAMD)                                 \
   DEV_PFN(EXCLUDED, vkGetSwapchainCounterEXT)                           \
-  DEV_PFN(EXCLUDED, vkGetSwapchainImagesKHR)                            \
+  DEV_PFN(OPTIONAL, vkGetSwapchainImagesKHR)                            \
   DEV_PFN(EXCLUDED, vkGetSwapchainStatusKHR)                            \
   DEV_PFN(EXCLUDED, vkGetValidationCacheDataEXT)                        \
   DEV_PFN(OPTIONAL, vkImportFenceFdKHR)                                 \
@@ -301,7 +301,7 @@ namespace vulkan {
   INS_PFN(EXCLUDED, vkDestroyDebugReportCallbackEXT)                    \
   INS_PFN(OPTIONAL, vkDestroyDebugUtilsMessengerEXT)                    \
   INS_PFN(REQUIRED, vkDestroyInstance)                                  \
-  INS_PFN(EXCLUDED, vkDestroySurfaceKHR)                                \
+  INS_PFN(OPTIONAL, vkDestroySurfaceKHR)                                \
   INS_PFN(EXCLUDED, vkEnumeratePhysicalDeviceGroups)                    \
   INS_PFN(EXCLUDED, vkEnumeratePhysicalDeviceGroupsKHR)                 \
   INS_PFN(REQUIRED, vkEnumeratePhysicalDevices)                         \
@@ -354,18 +354,18 @@ namespace vulkan {
   INS_PFN(EXCLUDED, vkGetPhysicalDeviceSparseImageFormatProperties2KHR) \
   INS_PFN(EXCLUDED, vkGetPhysicalDeviceSurfaceCapabilities2EXT)         \
   INS_PFN(EXCLUDED, vkGetPhysicalDeviceSurfaceCapabilities2KHR)         \
-  INS_PFN(EXCLUDED, vkGetPhysicalDeviceSurfaceCapabilitiesKHR)          \
+  INS_PFN(OPTIONAL, vkGetPhysicalDeviceSurfaceCapabilitiesKHR)          \
   INS_PFN(EXCLUDED, vkGetPhysicalDeviceSurfaceFormats2KHR)              \
-  INS_PFN(EXCLUDED, vkGetPhysicalDeviceSurfaceFormatsKHR)               \
-  INS_PFN(EXCLUDED, vkGetPhysicalDeviceSurfacePresentModesKHR)          \
-  INS_PFN(EXCLUDED, vkGetPhysicalDeviceSurfaceSupportKHR)               \
+  INS_PFN(OPTIONAL, vkGetPhysicalDeviceSurfaceFormatsKHR)               \
+  INS_PFN(OPTIONAL, vkGetPhysicalDeviceSurfacePresentModesKHR)          \
+  INS_PFN(OPTIONAL, vkGetPhysicalDeviceSurfaceSupportKHR)               \
   INS_PFN(EXCLUDED, vkReleaseDisplayEXT)                                \
   DEV_PFN(EXCLUDED, vkGetQueueCheckpointDataNV)                         \
   DEV_PFN(OPTIONAL, vkQueueBeginDebugUtilsLabelEXT)                     \
   DEV_PFN(EXCLUDED, vkQueueBindSparse)                                  \
   DEV_PFN(OPTIONAL, vkQueueEndDebugUtilsLabelEXT)                       \
   DEV_PFN(OPTIONAL, vkQueueInsertDebugUtilsLabelEXT)                    \
-  DEV_PFN(EXCLUDED, vkQueuePresentKHR)                                  \
+  DEV_PFN(OPTIONAL, vkQueuePresentKHR)                                  \
   DEV_PFN(REQUIRED, vkQueueSubmit)                                      \
   DEV_PFN(REQUIRED, vkQueueWaitIdle)
 
@@ -432,15 +432,15 @@ namespace vulkan {
 #define IREE_VULKAN_DYNAMIC_SYMBOL_TABLE_WIN32_KHR(INS_PFN, DEV_PFN) \
   DEV_PFN(EXCLUDED, vkAcquireFullScreenExclusiveModeEXT)             \
   DEV_PFN(EXCLUDED, vkGetDeviceGroupSurfacePresentModes2EXT)         \
-  DEV_PFN(REQUIRED, vkGetFenceWin32HandleKHR)                        \
+  DEV_PFN(OPTIONAL, vkGetFenceWin32HandleKHR)                        \
   DEV_PFN(EXCLUDED, vkGetMemoryWin32HandleKHR)                       \
   DEV_PFN(EXCLUDED, vkGetMemoryWin32HandleNV)                        \
   DEV_PFN(EXCLUDED, vkGetMemoryWin32HandlePropertiesKHR)             \
-  DEV_PFN(REQUIRED, vkGetSemaphoreWin32HandleKHR)                    \
-  DEV_PFN(REQUIRED, vkImportFenceWin32HandleKHR)                     \
-  DEV_PFN(REQUIRED, vkImportSemaphoreWin32HandleKHR)                 \
+  DEV_PFN(OPTIONAL, vkGetSemaphoreWin32HandleKHR)                    \
+  DEV_PFN(OPTIONAL, vkImportFenceWin32HandleKHR)                     \
+  DEV_PFN(OPTIONAL, vkImportSemaphoreWin32HandleKHR)                 \
   DEV_PFN(EXCLUDED, vkReleaseFullScreenExclusiveModeEXT)             \
-  INS_PFN(EXCLUDED, vkCreateWin32SurfaceKHR)                         \
+  INS_PFN(OPTIONAL, vkCreateWin32SurfaceKHR)                         \
   INS_PFN(EXCLUDED, vkGetPhysicalDeviceSurfacePresentModes2EXT)      \
   INS_PFN(EXCLUDED, vkGetPhysicalDeviceWin32PresentationSupportKHR)
 #else

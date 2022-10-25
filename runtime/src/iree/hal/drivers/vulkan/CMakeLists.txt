@@ -127,3 +127,9 @@ if(IREE_ENABLE_RENDERDOC_PROFILING)
       "IREE_HAL_VULKAN_HAVE_RENDERDOC=1"
   )
 endif()
+if(IREE_ENABLE_VULKAN_PRESENT_PROFILING)
+  target_compile_definitions(iree_hal_drivers_vulkan_vulkan
+    PUBLIC
+      "IREE_HAL_VULKAN_USE_PRESENT_PROFILING=1"
+  )
+endif()

@@ -127,6 +127,377 @@ static void iree_hal_vulkan_end_renderdoc_capture(
 #endif  // IREE_HAL_VULKAN_HAVE_RENDERDOC
 
 //===----------------------------------------------------------------------===//
+// Hidden window swapchain present profiling support
+//===----------------------------------------------------------------------===//
+// Some graphics-focused Vulkan tooling only supports capturing at frame
+// boundaries and triggers off of a swapchain present. This is silly for
+// headless graphics or compute and when possible we prefer to use programmatic
+// capture hooks instead (like RenderDoc provides).
+
+#if defined(IREE_HAL_VULKAN_USE_PRESENT_PROFILING)
+
+typedef struct {
+  HWND hwnd;
+  VkSurfaceKHR surface;
+  VkSwapchainKHR swapchain;
+  VkQueue present_queue;
+  VkSemaphore acquire_semaphore;
+  VkSemaphore present_semaphore;
+  uint32_t image_count;
+  uint32_t image_index;  // UINT32_MAX if invalid
+  VkImage images[8];
+  VkCommandPool command_pool;
+  VkCommandBuffer command_buffer;
+} iree_hal_vulkan_present_state_t;
+
+#pragma comment(linker, "/subsystem:windows")
+
+LRESULT CALLBACK iree_hal_vulkan_offscreen_wndproc(HWND hwnd, UINT message,
+                                                   WPARAM wParam,
+                                                   LPARAM lParam) {
+  // If needed we have the state structure:
+  // iree_hal_vulkan_present_state_t* state =
+  //     (iree_hal_vulkan_present_state_t*)lParam;
+  switch (message) {
+    case WM_PAINT:
+      break;
+    default:
+      return DefWindowProc(hwnd, message, wParam, lParam);
+  }
+  return 0;
+}
+
+static iree_status_t iree_hal_vulkan_create_offscreen_window(
+    iree_hal_vulkan_present_state_t* state, HINSTANCE module_handle,
+    HWND* out_hwnd) {
+  IREE_ASSERT_ARGUMENT(out_hwnd);
+  *out_hwnd = NULL;
+
+  WNDCLASSEX wcex;
+  wcex.cbSize = sizeof(WNDCLASSEX);
+  wcex.style = WS_EX_NOACTIVATE;
+  wcex.lpfnWndProc = iree_hal_vulkan_offscreen_wndproc;
+  wcex.cbClsExtra = 0;
+  wcex.cbWndExtra = 0;
+  wcex.hInstance = module_handle;
+  wcex.hIcon = NULL;
+  wcex.hCursor = NULL;
+  wcex.hbrBackground = NULL;
+  wcex.lpszMenuName = NULL;
+  wcex.lpszClassName = "iree_offscreen";
+  wcex.hIconSm = NULL;
+  if (!RegisterClassEx(&wcex)) {
+    return iree_make_status(iree_status_code_from_win32_error(GetLastError()),
+                            "failed to register offscreen window class");
+  }
+
+  HWND hwnd =
+      CreateWindowEx(WS_EX_NOACTIVATE, wcex.lpszClassName, "iree-offscreen",
+                     WS_DISABLED /*WS_OVERLAPPEDWINDOW*/, 0, 0, 128, 128, NULL,
+                     NULL, module_handle, state);
+  if (!hwnd) {
+    return iree_make_status(iree_status_code_from_win32_error(GetLastError()),
+                            "failed to create offscreen window");
+  }
+  ShowWindow(hwnd, SW_HIDE);
+
+  *out_hwnd = hwnd;
+  return iree_ok_status();
+}
+
+static iree_status_t iree_hal_vulkan_create_offscreen_swapchain(
+    VkInstance instance, VkDeviceHandle* logical_device,
+    uint32_t queue_family_index, VkSurfaceKHR surface,
+    const VkSurfaceCapabilitiesKHR* surface_caps,
+    VkSwapchainKHR* out_swapchain) {
+  auto& syms = logical_device->syms();
+  IREE_ASSERT_ARGUMENT(out_swapchain);
+  *out_swapchain = NULL;
+
+  // DO NOT SUBMIT
+  // we should query these - android/ios/etc have much more limited support
+  VkFormat image_format = VK_FORMAT_B8G8R8A8_UNORM;
+  VkColorSpaceKHR color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+
+  VkSwapchainCreateInfoKHR create_info = {};
+  create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+  create_info.surface = surface;
+  create_info.minImageCount = surface_caps->minImageCount;
+  create_info.imageFormat = image_format;
+  create_info.imageColorSpace = color_space;
+  create_info.imageExtent = surface_caps->minImageExtent;
+  create_info.imageArrayLayers = 1;
+  create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  create_info.queueFamilyIndexCount = 1;
+  create_info.pQueueFamilyIndices = &queue_family_index;
+  create_info.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+  create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+  create_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+
+  VkSwapchainKHR swapchain = NULL;
+  iree_status_t status = VK_RESULT_TO_STATUS(syms->vkCreateSwapchainKHR(
+      *logical_device, &create_info, NULL, &swapchain));
+  if (iree_status_is_ok(status)) {
+    *out_swapchain = swapchain;
+  }
+  return status;
+}
+
+// DO NOT SUBMIT change to re-recording the command buffer instead of recreating
+static iree_status_t iree_hal_vulkan_create_present_command_buffer(
+    VkDeviceHandle* logical_device, iree_hal_vulkan_present_state_t* state,
+    VkCommandBuffer* out_command_buffer) {
+  auto& syms = logical_device->syms();
+
+  VkCommandBufferAllocateInfo command_buffer_info = {};
+  command_buffer_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  command_buffer_info.pNext = NULL;
+  command_buffer_info.commandPool = state->command_pool;
+  command_buffer_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  command_buffer_info.commandBufferCount = 1;
+  VkCommandBuffer command_buffer = NULL;
+  IREE_RETURN_IF_ERROR(VK_RESULT_TO_STATUS(syms->vkAllocateCommandBuffers(
+      *logical_device, &command_buffer_info, &command_buffer)));
+
+  VkCommandBufferBeginInfo begin_info = {};
+  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  begin_info.pNext = NULL;
+  begin_info.flags = 0;
+  begin_info.pInheritanceInfo = NULL;
+  iree_status_t status = VK_RESULT_TO_STATUS(
+      syms->vkBeginCommandBuffer(command_buffer, &begin_info));
+  if (!iree_status_is_ok(status)) {
+    syms->vkFreeCommandBuffers(*logical_device, state->command_pool, 1,
+                               &command_buffer);
+    return status;
+  }
+
+  VkImageMemoryBarrier image_barrier = {};
+  image_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  image_barrier.pNext = NULL;
+  image_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  image_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+  image_barrier.image = state->images[state->image_index];
+  image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  image_barrier.subresourceRange.baseMipLevel = 0;
+  image_barrier.subresourceRange.levelCount = 1;
+  image_barrier.subresourceRange.layerCount = 1;
+  syms->vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, NULL, 0,
+                             NULL, 1, &image_barrier);
+
+  status = VK_RESULT_TO_STATUS(syms->vkEndCommandBuffer(command_buffer));
+
+  if (iree_status_is_ok(status)) {
+    *out_command_buffer = command_buffer;
+  } else {
+    syms->vkFreeCommandBuffers(*logical_device, state->command_pool, 1,
+                               &command_buffer);
+  }
+  return status;
+}
+
+static void iree_hal_vulkan_present_state_deinitialize(
+    VkInstance instance, VkDeviceHandle* logical_device,
+    iree_hal_vulkan_present_state_t* state);
+
+static iree_status_t iree_hal_vulkan_present_state_initialize(
+    VkInstance instance, VkPhysicalDevice physical_device,
+    VkDeviceHandle* logical_device, VkCommandPool command_pool,
+    iree_hal_vulkan_present_state_t* out_state) {
+  auto& syms = logical_device->syms();
+
+  // If we were unable to get the extensions (headless, etc) then no-op.
+  if (!syms->vkCreateSwapchainKHR || !syms->vkCreateWin32SurfaceKHR) {
+    return iree_ok_status();
+  }
+
+  // DO NOT SUBMIT
+  // need to ensure we pick a graphics+present queue
+  uint32_t queue_family_index = 0;
+  uint32_t queue_index = 0;
+
+  out_state->command_pool = command_pool;
+
+  HINSTANCE module_handle = GetModuleHandle(NULL);
+  IREE_RETURN_IF_ERROR(iree_hal_vulkan_create_offscreen_window(
+      out_state, module_handle, &out_state->hwnd));
+
+  VkWin32SurfaceCreateInfoKHR surface_info = {};
+  surface_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+  surface_info.pNext = NULL;
+  surface_info.flags = 0;
+  surface_info.hinstance = module_handle;
+  surface_info.hwnd = out_state->hwnd;
+  iree_status_t status = VK_RESULT_TO_STATUS(syms->vkCreateWin32SurfaceKHR(
+      instance, &surface_info, NULL, &out_state->surface));
+
+  VkSurfaceCapabilitiesKHR surface_caps = {};
+  if (iree_status_is_ok(status)) {
+    status =
+        VK_RESULT_TO_STATUS(syms->vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+            physical_device, out_state->surface, &surface_caps));
+  }
+
+  if (iree_status_is_ok(status)) {
+    VkBool32 is_supported = VK_FALSE;
+    status = VK_RESULT_TO_STATUS(syms->vkGetPhysicalDeviceSurfaceSupportKHR(
+        physical_device, queue_family_index, out_state->surface,
+        &is_supported));
+    if (iree_status_is_ok(status) && !is_supported) {
+      status =
+          iree_make_status(IREE_STATUS_UNAVAILABLE,
+                           "surface present not supported on queue family");
+    }
+  }
+
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_vulkan_create_offscreen_swapchain(
+        instance, logical_device, queue_family_index, out_state->surface,
+        &surface_caps, &out_state->swapchain);
+  }
+
+  if (iree_status_is_ok(status)) {
+    uint32_t image_count = IREE_ARRAYSIZE(out_state->images);
+    status = VK_RESULT_TO_STATUS(
+        syms->vkGetSwapchainImagesKHR(*logical_device, out_state->swapchain,
+                                      &image_count, out_state->images));
+    out_state->image_count = image_count;
+    out_state->image_index = UINT32_MAX;
+  }
+
+  if (iree_status_is_ok(status)) {
+    VkSemaphoreCreateInfo semaphore_info = {};
+    semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    semaphore_info.pNext = NULL;
+    status = VK_RESULT_TO_STATUS(syms->vkCreateSemaphore(
+        *logical_device, &semaphore_info, NULL, &out_state->acquire_semaphore));
+  }
+  if (iree_status_is_ok(status)) {
+    VkSemaphoreCreateInfo semaphore_info = {};
+    semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    semaphore_info.pNext = NULL;
+    status = VK_RESULT_TO_STATUS(syms->vkCreateSemaphore(
+        *logical_device, &semaphore_info, NULL, &out_state->present_semaphore));
+  }
+
+  if (iree_status_is_ok(status)) {
+    syms->vkGetDeviceQueue(*logical_device, queue_family_index, queue_index,
+                           &out_state->present_queue);
+  }
+
+  if (!iree_status_is_ok(status)) {
+    iree_hal_vulkan_present_state_deinitialize(instance, logical_device,
+                                               out_state);
+  }
+  return status;
+}
+
+static void iree_hal_vulkan_present_state_deinitialize(
+    VkInstance instance, VkDeviceHandle* logical_device,
+    iree_hal_vulkan_present_state_t* state) {
+  auto& syms = logical_device->syms();
+  if (state->command_buffer) {
+    syms->vkFreeCommandBuffers(*logical_device, state->command_pool, 1,
+                               &state->command_buffer);
+    state->command_buffer = NULL;
+  }
+  if (state->present_semaphore) {
+    syms->vkDestroySemaphore(*logical_device, state->present_semaphore, NULL);
+    state->present_semaphore = NULL;
+  }
+  if (state->acquire_semaphore) {
+    syms->vkDestroySemaphore(*logical_device, state->acquire_semaphore, NULL);
+    state->acquire_semaphore = NULL;
+  }
+  if (state->swapchain) {
+    syms->vkDestroySwapchainKHR(*logical_device, state->swapchain, NULL);
+    state->swapchain = NULL;
+  }
+  if (state->surface) {
+    syms->vkDestroySurfaceKHR(instance, state->surface, NULL);
+    state->surface = NULL;
+  }
+  if (state->hwnd) {
+    CloseWindow(state->hwnd);
+    state->hwnd = NULL;
+  }
+}
+
+static iree_status_t iree_hal_vulkan_profiling_present_begin(
+    VkDeviceHandle* logical_device, iree_hal_vulkan_present_state_t* state) {
+  // No-op if unavailable.
+  if (!state->swapchain) return iree_ok_status();
+  if (state->image_index != UINT32_MAX) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "can only have one profiling region at a time");
+  }
+
+  auto& syms = logical_device->syms();
+
+  IREE_RETURN_IF_ERROR(
+      VK_RESULT_TO_STATUS(syms->vkDeviceWaitIdle(*logical_device)));
+  if (state->command_buffer) {
+    syms->vkFreeCommandBuffers(*logical_device, state->command_pool, 1,
+                               &state->command_buffer);
+    state->command_buffer = NULL;
+  }
+
+  uint32_t image_index = 0;
+  IREE_RETURN_IF_ERROR(VK_RESULT_TO_STATUS(syms->vkAcquireNextImageKHR(
+      *logical_device, state->swapchain, UINT64_MAX, state->acquire_semaphore,
+      VK_NULL_HANDLE, &image_index)));
+  state->image_index = image_index;
+
+  return iree_ok_status();
+}
+
+static iree_status_t iree_hal_vulkan_profiling_present_end(
+    VkDeviceHandle* logical_device, iree_hal_vulkan_present_state_t* state) {
+  // No-op if unavailable.
+  if (!state->swapchain) return iree_ok_status();
+  // No-op if not capturing.
+  if (state->image_index == UINT32_MAX) return iree_ok_status();
+
+  auto& syms = logical_device->syms();
+
+  IREE_RETURN_IF_ERROR(iree_hal_vulkan_create_present_command_buffer(
+      logical_device, state, &state->command_buffer));
+
+  VkSubmitInfo submit_info = {};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.waitSemaphoreCount = 1;
+  submit_info.pWaitSemaphores = &state->acquire_semaphore;
+  submit_info.signalSemaphoreCount = 1;
+  submit_info.pSignalSemaphores = &state->present_semaphore;
+  VkPipelineStageFlags wait_stage =
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+  submit_info.pWaitDstStageMask = &wait_stage;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &state->command_buffer;
+  IREE_RETURN_IF_ERROR(VK_RESULT_TO_STATUS(syms->vkQueueSubmit(
+      state->present_queue, 1, &submit_info, VK_NULL_HANDLE)));
+
+  VkPresentInfoKHR present_info = {};
+  present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+  present_info.pNext = NULL;
+  present_info.waitSemaphoreCount = 1;
+  present_info.pWaitSemaphores = &state->present_semaphore;
+  present_info.swapchainCount = 1;
+  present_info.pSwapchains = &state->swapchain;
+  present_info.pImageIndices = &state->image_index;
+  present_info.pResults = NULL;
+  IREE_RETURN_IF_ERROR(VK_RESULT_TO_STATUS(
+      syms->vkQueuePresentKHR(state->present_queue, &present_info)));
+
+  state->image_index = UINT32_MAX;
+  return iree_ok_status();
+}
+
+#endif  // IREE_HAL_VULKAN_USE_PRESENT_PROFILING
+
+//===----------------------------------------------------------------------===//
 // iree_hal_vulkan_device_t extensibility util
 //===----------------------------------------------------------------------===//
 
@@ -236,6 +607,20 @@ IREE_API_EXPORT iree_status_t iree_hal_vulkan_query_extensibility_set(
             VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
   }
 
+#if defined(IREE_HAL_VULKAN_USE_PRESENT_PROFILING)
+  // VK_KHR_surface:
+  ADD_EXT(IREE_HAL_VULKAN_EXTENSIBILITY_INSTANCE_EXTENSIONS_OPTIONAL,
+          VK_KHR_SURFACE_EXTENSION_NAME);
+  // VK_KHR_swapchain:
+  ADD_EXT(IREE_HAL_VULKAN_EXTENSIBILITY_DEVICE_EXTENSIONS_OPTIONAL,
+          VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+  // VK_KHR_win32_surface:
+  ADD_EXT(IREE_HAL_VULKAN_EXTENSIBILITY_INSTANCE_EXTENSIONS_OPTIONAL,
+          VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+#endif  // VK_USE_PLATFORM_WIN32_KHR
+#endif  // IREE_HAL_VULKAN_USE_PRESENT_PROFILING
+
 #if IREE_TRACING_FEATURES & IREE_TRACING_FEATURE_INSTRUMENTATION
   if (iree_all_bits_set(requested_features,
                         IREE_HAL_VULKAN_FEATURE_ENABLE_TRACING)) {
@@ -319,10 +704,14 @@ static iree_status_t iree_hal_vulkan_select_queue_families(
   // Try to find a dedicated compute queue (no graphics caps).
   // Some may support both transfer and compute. If that fails then fallback
   // to any queue that supports compute.
+  // out_family_info->dispatch_index =
+  //     iree_hal_vulkan_find_first_queue_family_with_flags(
+  //         queue_family_count, queue_family_properties, VK_QUEUE_COMPUTE_BIT,
+  //         VK_QUEUE_GRAPHICS_BIT);
   out_family_info->dispatch_index =
       iree_hal_vulkan_find_first_queue_family_with_flags(
-          queue_family_count, queue_family_properties, VK_QUEUE_COMPUTE_BIT,
-          VK_QUEUE_GRAPHICS_BIT);
+          queue_family_count, queue_family_properties,
+          VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, 0);
   if (out_family_info->dispatch_index ==
       IREE_HAL_VULKAN_INVALID_QUEUE_FAMILY_INDEX) {
     out_family_info->dispatch_index =
@@ -476,6 +865,9 @@ typedef struct iree_hal_vulkan_device_t {
 #if defined(IREE_HAL_VULKAN_HAVE_RENDERDOC)
   RENDERDOC_API_LATEST* renderdoc_api;
 #endif  // IREE_HAL_VULKAN_HAVE_RENDERDOC
+#if defined(IREE_HAL_VULKAN_USE_PRESENT_PROFILING)
+  iree_hal_vulkan_present_state_t present_state;
+#endif  // IREE_HAL_VULKAN_USE_PRESENT_PROFILING
 } iree_hal_vulkan_device_t;
 
 namespace {
@@ -723,6 +1115,12 @@ static iree_status_t iree_hal_vulkan_device_create_internal(
     status = device->builtin_executables->InitializeExecutables();
   }
 
+#if defined(IREE_HAL_VULKAN_USE_PRESENT_PROFILING)
+  IREE_RETURN_IF_ERROR(iree_hal_vulkan_present_state_initialize(
+      device->instance, device->physical_device, device->logical_device,
+      device->dispatch_command_pool->value(), &device->present_state));
+#endif  // IREE_HAL_VULKAN_USE_PRESENT_PROFILING
+
   if (iree_status_is_ok(status)) {
     *out_device = (iree_hal_device_t*)device;
   } else {
@@ -741,6 +1139,11 @@ static void iree_hal_vulkan_device_destroy(iree_hal_device_t* base_device) {
     delete device->queues[i];
     iree_hal_vulkan_tracing_context_free(device->queue_tracing_contexts[i]);
   }
+
+#if defined(IREE_HAL_VULKAN_USE_PRESENT_PROFILING)
+  iree_hal_vulkan_present_state_deinitialize(
+      device->instance, device->logical_device, &device->present_state);
+#endif  // IREE_HAL_VULKAN_USE_PRESENT_PROFILING
 
   // Drop command pools now that we know there are no more outstanding command
   // buffers.
@@ -1245,7 +1648,12 @@ static iree_status_t iree_hal_vulkan_device_profiling_begin(
     iree_hal_vulkan_begin_renderdoc_capture(device->renderdoc_api,
                                             device->instance, options);
 #endif  // IREE_HAL_VULKAN_HAVE_RENDERDOC
+#if defined(IREE_HAL_VULKAN_USE_PRESENT_PROFILING)
+    IREE_RETURN_IF_ERROR(iree_hal_vulkan_profiling_present_begin(
+        device->logical_device, &device->present_state));
+#endif  // IREE_HAL_VULKAN_USE_PRESENT_PROFILING
   }
+
   return iree_ok_status();
 }
 
@@ -1254,10 +1662,15 @@ static iree_status_t iree_hal_vulkan_device_profiling_end(
   iree_hal_vulkan_device_t* device = iree_hal_vulkan_device_cast(base_device);
   (void)device;
 
+#if defined(IREE_HAL_VULKAN_USE_PRESENT_PROFILING)
+  IREE_RETURN_IF_ERROR(iree_hal_vulkan_profiling_present_end(
+      device->logical_device, &device->present_state));
+#endif  // IREE_HAL_VULKAN_USE_PRESENT_PROFILING
 #if defined(IREE_HAL_VULKAN_HAVE_RENDERDOC)
   iree_hal_vulkan_end_renderdoc_capture(device->renderdoc_api,
                                         device->instance);
 #endif  // IREE_HAL_VULKAN_HAVE_RENDERDOC
+
   return iree_ok_status();
 }
 
