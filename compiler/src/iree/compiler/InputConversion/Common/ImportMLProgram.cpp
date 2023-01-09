@@ -77,17 +77,24 @@ class MLProgramGlobalOpPattern
       ConversionPatternRewriter &rewriter) const override {
     Type newType = typeConverter->convertType(srcOp.getType());
     if (!newType) return failure();
+
     auto srcOpAttr = srcOp.getValue();
+    bool isExtern = srcOpAttr && isa<ml_program::ExternAttr>(*srcOpAttr);
     auto srcOpTypedAttr =
-        srcOpAttr.has_value()
+        !isExtern && srcOpAttr.has_value()
             ? Optional<TypedAttr>(srcOpAttr.value().cast<TypedAttr>())
             : std::nullopt;
-    const bool isMutable = srcOp.getIsMutable();
     const SymbolTable::Visibility visibility = srcOp.getVisibility();
+    // Generate a mutable util::Global if either the src ml_program is mutable
+    // or if a public extern.
+    bool isMutable =
+        srcOp.getIsMutable() ||
+        (isExtern && visibility == SymbolTable::Visibility::Public);
     auto globalOp = rewriter.replaceOpWithNewOp<IREE::Util::GlobalOp>(
-        srcOp, srcOp.getName(), srcOp.getIsMutable(), newType, srcOpTypedAttr);
+        srcOp, srcOp.getName(), isMutable, newType, srcOpTypedAttr);
     globalOp.setVisibility(SymbolTable::Visibility::Private);
 
+    // No more work needed if not public global.
     if (visibility != SymbolTable::Visibility::Public) return success();
 
     ModuleOp module = srcOp->getParentOfType<ModuleOp>();

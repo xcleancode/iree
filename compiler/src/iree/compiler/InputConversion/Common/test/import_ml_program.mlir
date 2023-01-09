@@ -73,3 +73,19 @@ builtin.module @global_store {
     return
   }
 }
+
+// -----
+// CHECK-LABEL: module @globals_extern
+builtin.module @globals_extern {
+  // CHECK: util.global private mutable @global_pubmut : i32
+  // CHECK: func @global$global_pubmut$get() -> i32
+  // CHECK: func @global$global_pubmut$set(%{{.*}}: i32)
+  // CHECK-NOT: func
+  ml_program.global public @global_pubmut(#ml_program.extern<i32>) : i32
+  // CHECK: util.global private mutable @global_privmut : i32
+  // CHECK-NOT: func
+  ml_program.global private mutable @global_privmut(#ml_program.extern<i32>) : i32
+  // CHECK: util.global private @global_priv : i32
+  ml_program.global private @global_priv(#ml_program.extern<i32>) : i32
+}
+
