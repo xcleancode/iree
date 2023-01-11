@@ -11,6 +11,7 @@
 #include "iree/compiler/InputConversion/Common/Passes.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MLProgram/IR/MLProgram.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -69,33 +70,53 @@ class OneToOneConversionPattern : public ConversionPattern {
   StringRef targetName;
 };
 
+// Components to construct globals.
+struct GlobalComponents {
+  GlobalComponents(StringRef name, Type newType)
+      : name(name), newType(newType) {}
+  StringRef name;
+  Type newType;
+};
+
 class MLProgramGlobalOpPattern
     : public OpConversionPattern<ml_program::GlobalOp> {
-  using OpConversionPattern::OpConversionPattern;
+ public:
+  MLProgramGlobalOpPattern(TypeConverter &typeConverter, MLIRContext *context,
+                           PatternBenefit benefit,
+                           SmallVector<GlobalComponents> &externGlobals)
+      : OpConversionPattern<ml_program::GlobalOp>(typeConverter, context,
+                                                  benefit),
+        externGlobals(externGlobals) {}
+
   LogicalResult matchAndRewrite(
       ml_program::GlobalOp srcOp, OpAdaptor adaptor,
       ConversionPatternRewriter &rewriter) const override {
     Type newType = typeConverter->convertType(srcOp.getType());
     if (!newType) return failure();
 
+    std::map<StringRef, ml_program::ExternAttr> externs;
+
     auto srcOpAttr = srcOp.getValue();
     bool isExtern = srcOpAttr && isa<ml_program::ExternAttr>(*srcOpAttr);
     auto srcOpTypedAttr =
-        !isExtern && srcOpAttr.has_value()
+        (srcOpAttr && !isExtern)
             ? Optional<TypedAttr>(srcOpAttr.value().cast<TypedAttr>())
             : std::nullopt;
     const SymbolTable::Visibility visibility = srcOp.getVisibility();
-    // Generate a mutable util::Global if either the src ml_program is mutable
-    // or if a public extern.
-    bool isMutable =
-        srcOp.getIsMutable() ||
-        (isExtern && visibility == SymbolTable::Visibility::Public);
+    // Create util Global which is mutable if the ML program global was or if
+    // extern to enable initialization method.
+    bool isMutable = srcOp.getIsMutable() || isExtern;
     auto globalOp = rewriter.replaceOpWithNewOp<IREE::Util::GlobalOp>(
         srcOp, srcOp.getName(), isMutable, newType, srcOpTypedAttr);
     globalOp.setVisibility(SymbolTable::Visibility::Private);
 
     // No more work needed if not public global.
     if (visibility != SymbolTable::Visibility::Public) return success();
+
+    if (isExtern) {
+      externGlobals.emplace_back(srcOp.getName(), newType);
+      return success();
+    }
 
     ModuleOp module = srcOp->getParentOfType<ModuleOp>();
 
@@ -168,7 +189,38 @@ class MLProgramGlobalOpPattern
 
     return success();
   }
+
+  SmallVector<GlobalComponents> &externGlobals;
 };
+
+LogicalResult createExternInitFunction(
+    ModuleOp module, SmallVector<GlobalComponents> &externGlobals) {
+  std::sort(externGlobals.begin(), externGlobals.end(),
+            [](const GlobalComponents &lhs, const GlobalComponents &rhs) {
+              return lhs.name < rhs.name;
+            });
+  auto *context = module.getContext();
+  ImplicitLocOpBuilder b(module.getLoc(), context);
+  b.setInsertionPointToEnd(&module.getBodyRegion().back());
+  FunctionType funcType = b.getFunctionType(
+      /*input=*/TypeRange{IREE::Util::ListType::get(
+          IREE::Util::VariantType::get(context))},
+      /*outputs=*/{});
+  auto funcOp = b.create<func::FuncOp>("ireeMlProgramGlobalsInit", funcType);
+  funcOp.setPublic();
+  b.setInsertionPointToStart(funcOp.addEntryBlock());
+
+  for (auto &it : llvm::enumerate(externGlobals)) {
+    auto val = b.create<IREE::Util::ListGetOp>(
+        it.value().newType, funcOp.getArgument(0),
+        b.create<arith::ConstantIndexOp>(it.index()));
+    b.create<IREE::Util::GlobalStoreOp>(val, it.value().name);
+  }
+
+  b.create<func::ReturnOp>();
+
+  return success();
+}
 
 }  // namespace
 
@@ -185,7 +237,9 @@ void ImportMLProgramPass::runOnOperation() {
   target.markUnknownOpDynamicallyLegal([](mlir::Operation *) { return true; });
 
   IREETypeConverter typeConverter;
-  patterns.insert<MLProgramGlobalOpPattern>(typeConverter, &getContext(), 0);
+  SmallVector<GlobalComponents> externGlobals;
+  patterns.insert<MLProgramGlobalOpPattern>(typeConverter, &getContext(), 0,
+                                            externGlobals);
 
   PatternBenefit specific_benefit = 100;
 #define ONE_TO_ONE(SrcOpTy, TargetOpTy)           \
@@ -198,6 +252,10 @@ void ImportMLProgramPass::runOnOperation() {
   ONE_TO_ONE(ml_program::GlobalStoreOp, IREE::Util::GlobalStoreOp);
 
   if (failed(applyFullConversion(getOperation(), target, std::move(patterns))))
+    signalPassFailure();
+
+  if (!externGlobals.empty() &&
+      failed(createExternInitFunction(getOperation(), externGlobals)))
     signalPassFailure();
 }
 
