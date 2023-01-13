@@ -107,16 +107,13 @@ class MLProgramGlobalOpPattern
     // extern to enable initialization method.
     bool isMutable = srcOp.getIsMutable() || isExtern;
     auto globalOp = rewriter.replaceOpWithNewOp<IREE::Util::GlobalOp>(
-        srcOp, srcOp.getName(), isMutable, newType, srcOpTypedAttr);
+        srcOp, srcOp.getName(), isMutable | isExtern, newType, srcOpTypedAttr);
     globalOp.setVisibility(SymbolTable::Visibility::Private);
+
+    if (isExtern) externGlobals.emplace_back(srcOp.getName(), newType);
 
     // No more work needed if not public global.
     if (visibility != SymbolTable::Visibility::Public) return success();
-
-    if (isExtern) {
-      externGlobals.emplace_back(srcOp.getName(), newType);
-      return success();
-    }
 
     ModuleOp module = srcOp->getParentOfType<ModuleOp>();
 
